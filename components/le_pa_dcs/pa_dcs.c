@@ -1,0 +1,616 @@
+//--------------------------------------------------------------------------------------------------
+/**
+ * LWIP Data Connection Service Adapter
+ * Provides adapter for linux specific functionality needed by
+ * dataConnectionService component
+ *
+ */
+//--------------------------------------------------------------------------------------------------
+
+#include "legato.h"
+#include "interfaces.h"
+#include "lwip/api.h"
+#include "lwip/netif.h"
+#include "lwip/dhcp.h"
+#include "lwip/dns.h"
+#include "lwip/netdb.h"
+#include "lwip/prot/ip4_route.h"
+#include "pa_dcs.h"
+
+
+/**
+ * TODO: This is most likely wrong - on linux
+ *       side, we do not need masks when searching
+ *       for routes. In LWIP, we do need masks and
+ *       they are not provided by the caller
+ */
+#define IPV4_DEFAULT_MASK_STRING         "255.255.255.255"
+
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Used to set mask to /32 or /64
+ *
+ * @return
+ *
+ */
+//--------------------------------------------------------------------------------------------------
+static le_result_t SetMask
+(
+    ip_addr_t*    addressPtr,
+    u8_t          type
+)
+{
+    ip6_addr_t* ip6Ptr;
+    ip4_addr_t* ip4Ptr;
+    int         i;
+    le_result_t retStat = LE_OK;
+
+    memset(addressPtr, 0x00, sizeof(ip_addr_t));
+    addressPtr->type = type;
+
+    switch (addressPtr->type)
+    {
+    case IPADDR_TYPE_V4:
+        ip4Ptr = &addressPtr->u_addr.ip4;
+        ip4Ptr->addr = 0xFFFFFFFF;
+        break;
+
+    case IPADDR_TYPE_V6:
+        ip6Ptr = &addressPtr->u_addr.ip6;
+        for (i = 0; i < 4; i++)
+        {
+            ip6Ptr->addr[i] = 0xFFFFFFFF;
+        }
+        break;
+
+    default:
+        LE_ERROR("Invalid IP address type %d", addressPtr->type);
+        retStat = LE_FAULT;
+        break;
+    }
+
+    return retStat;
+}
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * This function adds route
+ *
+ * @return
+ *          LE_OK      succes
+ *          LE_FAULT   failure
+ *
+ */
+//--------------------------------------------------------------------------------------------------
+static le_result_t AddRoute
+(
+    struct netif*     netifPtr,
+    ip_addr_t*        destinationPtr
+)
+{
+    le_result_t    retStat = LE_OK;
+    ip_addr_t      mask;
+
+    /**
+     * Set mask depending on destination type
+     */
+    if (SetMask(&mask, destinationPtr->type) != LE_OK)
+    {
+        LE_ERROR("Failed to set the mask");
+        return LE_FAULT;
+    }
+
+    switch (destinationPtr->type)
+    {
+    case IPADDR_TYPE_V4:
+        if (ip4_add_route_entry(mask,
+                                *destinationPtr,
+                                netifPtr) != IP_ROUTE_OK)
+        {
+            retStat = LE_FAULT;
+        }
+        break;
+
+    case IPADDR_TYPE_V6:
+        if (ip6_add_route_entry(mask,
+                                *destinationPtr,
+                                netifPtr) != IP_ROUTE_OK)
+        {
+            retStat = LE_FAULT;
+        }
+        break;
+
+    default:
+        retStat = LE_FAULT;
+        LE_ERROR("Invalid IP ADDR TYPE %" PRIu8, destinationPtr->type);
+        break;
+    }
+
+    return retStat;
+}
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * This function removes route
+ *
+ * @return
+ *          LE_OK      succes
+ *          LE_FAULT   failure
+ *
+ */
+//--------------------------------------------------------------------------------------------------
+static le_result_t RemoveRoute
+(
+    ip_addr_t*        destinationPtr
+)
+{
+    le_result_t    retStat = LE_OK;
+    ip_addr_t      mask;
+
+    /**
+     * Set proper mask depending on destination type
+     */
+    if (SetMask(&mask, destinationPtr->type) != LE_OK)
+    {
+        LE_ERROR("Failed to set the mask");
+        return LE_FAULT;
+    }
+
+    switch (destinationPtr->type)
+    {
+    case IPADDR_TYPE_V4:
+        if (ip4_remove_route_entry(mask,
+                                *destinationPtr) != IP_ROUTE_OK)
+        {
+            retStat = LE_FAULT;
+        }
+        break;
+
+    case IPADDR_TYPE_V6:
+        if (ip6_remove_route_entry(mask,
+                                *destinationPtr) != IP_ROUTE_OK)
+        {
+            retStat = LE_FAULT;
+        }
+        break;
+
+    default:
+        retStat = LE_FAULT;
+        LE_ERROR("Invalid IP ADDR TYPE %" PRIu8, destinationPtr->type);
+        break;
+    }
+    return retStat;
+}
+
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * This function parses char address and determines
+ * what type (V6 or V4) it is. The address can
+ * be provided in the form of host name or legitimate
+ * numeric IP address
+ *
+ * @return
+ *          LE_OK      succes
+ *          LE_FAULT   failure
+ *
+ */
+//--------------------------------------------------------------------------------------------------
+static le_result_t AddressStrToAddressStruct
+(
+    const char*          charAddress,     /// < [IN] address to analyze
+    ip_addr_t*           retAddrInfoPtr   /// < [OUT] ret address info
+)
+{
+    err_t stat;
+
+    memset(retAddrInfoPtr, 0x00, sizeof(ip_addr_t));
+
+    /**
+     * See if DNS lookup is really needed, check
+     * if this is legitimate numeric address first
+     */
+    if (ipaddr_aton(charAddress, retAddrInfoPtr) == 1)
+    {
+        return LE_OK;
+    }
+
+    /**
+     * Have to do DNS lookup
+     */
+    stat = netconn_gethostbyname_addrtype(charAddress,
+                                       retAddrInfoPtr,
+                                       NETCONN_DNS_IPV4_IPV6);
+    if (stat != ERR_OK)
+    {
+        LE_ERROR("Failed for charAddress=%s, stat=%d",
+                 charAddress,
+                 stat);
+        return LE_FAULT;
+    }
+
+    return LE_OK;
+}
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * This function converts ip_addr_t struct data to string
+ * form of IP address (V4 or V6)
+ *
+ * @return
+ *          IP address string      succes
+ *          NULL                   failure
+ *
+ */
+//--------------------------------------------------------------------------------------------------
+static le_result_t  AddressStructToAddressStr
+(
+    ip_addr_t*       addrStructPtr,
+    char*            addrBufferPtr,
+    size_t           bufferLen
+)
+{
+    le_result_t  retStat = LE_OK;
+
+    addrBufferPtr[0] = '\0';
+
+    switch (addrStructPtr->type)
+    {
+    case IPADDR_TYPE_V4:
+        if (inet_ntoa_r(addrStructPtr->u_addr.ip4,
+                        addrBufferPtr,
+                        bufferLen) == NULL)
+        {
+            LE_ERROR("Failed to convert ip4 addr struct to string");
+            retStat = LE_FAULT;
+        }
+        break;
+
+    case IPADDR_TYPE_V6:
+        if (inet6_ntoa_r(addrStructPtr->u_addr.ip6,
+                         addrBufferPtr,
+                         bufferLen) == NULL)
+        {
+            LE_ERROR("Failed to convert ip6 addr struct to string");
+            retStat = LE_FAULT;
+        }
+        break;
+
+    default:
+        LE_ERROR("Invalid address type: %d", addrStructPtr->type);
+        retStat = LE_FAULT;
+        break;
+    }
+
+    LE_DEBUG("Converted address is %s", addrBufferPtr);
+
+    return retStat;
+}
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Set the DNS configuration
+ *
+ * @return
+ *      LE_FAULT        Function failed
+ *      LE_OK           Function succeed
+ */
+//--------------------------------------------------------------------------------------------------
+le_result_t pa_dcs_SetDnsNameServers
+(
+    const char* dns1Ptr,    ///< [IN] Pointer on first DNS address
+    const char* dns2Ptr     ///< [IN] Pointer on second DNS address
+)
+{
+    const char*       dnsNameServerArray[2] = {dns1Ptr, dns2Ptr};
+    ip_addr_t         retAddrStruct;
+    le_result_t       stat;
+    int               i;
+    int               arrayLen;
+
+    arrayLen = sizeof(dnsNameServerArray)/sizeof(const char*);
+
+    for (i = 0; i < arrayLen; i++)
+    {
+        stat = AddressStrToAddressStruct(dnsNameServerArray[i], &retAddrStruct);
+
+        if (stat != LE_OK)
+        {
+            LE_ERROR("Failed to convert address info for DNS Name Server: %s, state=%d",
+                     dnsNameServerArray[i],
+                     stat);
+            return LE_FAULT;
+        }
+
+        dns_setserver(i, &retAddrStruct);
+    }
+
+    return LE_OK;
+}
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * This function is only needed for WiFi client which is NOT part
+ * for now of any LWIP based platform we use. Besides, LWIP dhcp (Altair)
+ * is disabled  and we will hold of using AT client until we really need it.
+ *
+ *
+ * @return
+ *      - LE_OK     Function successful
+ *      - LE_FAULT  Function failed
+ */
+//--------------------------------------------------------------------------------------------------
+le_result_t pa_dcs_AskForIpAddress
+(
+    const char*    interfaceStrPtr
+)
+{
+    LE_ERROR("Unsupported");
+    return LE_FAULT;
+}
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Executes change route
+ *
+ * return
+ *      LE_OK           Function succeed
+ *      LE_FAULT        Function failed
+ */
+//--------------------------------------------------------------------------------------------------
+le_result_t pa_dcs_ChangeRoute
+(
+    pa_dcs_RouteAction_t   routeAction,
+    const char*            ipDestAddrStrPtr,
+    const char*            interfaceStrPtr
+)
+{
+    struct netif   *netIfPtr;
+    le_result_t     retStat = LE_OK;
+    ip_addr_t       destination;
+    int             stat;
+
+    switch (routeAction)
+    {
+    case PA_DCS_ROUTE_ADD:
+        netIfPtr = netif_find(interfaceStrPtr);
+
+        if (netIfPtr == NULL)
+        {
+            LE_ERROR("Failed to find network interface %s", interfaceStrPtr);
+            retStat = LE_FAULT;
+        } else {
+            stat = AddressStrToAddressStruct(ipDestAddrStrPtr, &destination);
+
+            if (stat != LE_OK)
+            {
+                LE_ERROR("Failed to convert destination address: %s, stat=%d",
+                         ipDestAddrStrPtr,
+                          stat);
+                 retStat = LE_FAULT;
+            } else {
+                if (AddRoute(netIfPtr, &destination) != LE_OK)
+                {
+                    LE_ERROR("Failed to add destination=%s to netIf=%s",
+                             ipDestAddrStrPtr,
+                             interfaceStrPtr);
+                    retStat = LE_FAULT;
+                }
+            }
+        }
+        break;
+
+    case PA_DCS_ROUTE_DELETE:
+        stat = AddressStrToAddressStruct(ipDestAddrStrPtr, &destination);
+
+        if (stat != LE_OK)
+        {
+                LE_ERROR("Failed to convert destination address: %s, stat=%d",
+                         ipDestAddrStrPtr,
+                          stat);
+                 retStat = LE_FAULT;
+        } else {
+            if (RemoveRoute(&destination) != LE_OK)
+            {
+                LE_ERROR("Failed to remove destination=%s", ipDestAddrStrPtr);
+                retStat = LE_FAULT;
+            }
+        }
+        break;
+
+    default:
+        LE_ERROR("Illegal routeAction=%d destination=%s interface=%s",
+                 routeAction,
+                 ipDestAddrStrPtr,
+                 interfaceStrPtr);
+        retStat = LE_FAULT;
+        break;
+    }
+
+    return retStat;
+}
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Set the default gateway in the system
+ *
+ * return
+ *      LE_OK           Function succeed
+ *      LE_FAULT        Function failed
+ */
+//--------------------------------------------------------------------------------------------------
+le_result_t pa_dcs_SetDefaultGateway
+(
+    const char* interfaceNamePtr,  ///< [IN] Pointer to the interface name
+    const char* gatewayPtr,        ///< [IN] Pointer to the gateway name/address
+    bool        isIpv6             ///< [IN] IPv6 or not
+)
+{
+    struct netif*  netIfPtr;
+
+    if (isIpv6)
+    {
+        /**
+         *  TODO: Currently we have obsolete netif_set_gw()
+         *        that only takes ip4_addr_t* (not ip_addr_t*)
+         */
+        LE_ERROR("Failed to set default gateway on interface %s, ipV6 not supported", interfaceNamePtr);
+
+      return LE_FAULT;
+    } else {
+        /**
+         * Just find the interface by the name
+         */
+        netIfPtr = netif_find(interfaceNamePtr);
+
+        if (netIfPtr == NULL)
+        {
+           LE_ERROR("Failed to find network interface %s", interfaceNamePtr);
+           return LE_FAULT;
+        }
+
+        /**
+         *  gw has to be provided in form of ip_addr_t
+         *  and we know this is IPv4
+         */
+        ip_addr_t gwAddr;
+
+        inet_pton(AF_INET, gatewayPtr, &gwAddr);
+
+        /**
+         * Note: newer version of LWIP take
+         *       ip_addr_t* as second argument -
+         *       that way you can set IPv4 or IPv6
+         *       but for now, ip4 is allwe have
+         */
+        netif_set_gw(netIfPtr, &gwAddr.u_addr.ip4);
+    }
+
+    return LE_OK;
+}
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Save the default route
+ */
+//--------------------------------------------------------------------------------------------------
+void pa_dcs_SaveDefaultGateway
+(
+    pa_dcs_InterfaceDataBackup_t* interfaceDataBackupPtr
+)
+{
+    char gwAddrStrBuffer[40];
+
+    /**
+     * There is no LWIP getter that gets netif_default
+     * so, we need to use this extern variable
+     */
+    if (netif_default != NULL)
+    {
+        if (sizeof(netif_default->name) >=
+               sizeof(interfaceDataBackupPtr->defaultInterface))
+        {
+            LE_ERROR("Insufficient size of default interface buffer: %" PRIu32 " ",
+                     sizeof(interfaceDataBackupPtr->defaultInterface));
+            return;
+        }
+        memset(interfaceDataBackupPtr->defaultInterface,
+               0x00,
+               sizeof(interfaceDataBackupPtr->defaultInterface));
+
+        memset(interfaceDataBackupPtr->defaultGateway,
+               0x00,
+               sizeof(interfaceDataBackupPtr->defaultGateway));
+
+        if (AddressStructToAddressStr(&(netif_default->gw),
+                                      gwAddrStrBuffer,
+                                      sizeof(gwAddrStrBuffer)) == LE_OK)
+        {
+            snprintf(interfaceDataBackupPtr->defaultGateway,
+                     sizeof(interfaceDataBackupPtr->defaultGateway),
+                     "%s",
+                     gwAddrStrBuffer);
+            /**
+             * Interface name in struct netif is not nul terminated
+             */
+            memcpy(interfaceDataBackupPtr->defaultInterface,
+                   netif_default->name,
+                   sizeof(netif_default->name));
+        } else {
+            LE_ERROR("Failed to convert default gw address struct");
+        }
+    } else {
+        LE_WARN("LWIP Default Gateway not set!!!");
+    }
+}
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Used the data backup upon connection to remove DNS entries locally added
+ */
+//--------------------------------------------------------------------------------------------------
+void pa_dcs_RestoreInitialDnsNameServers
+(
+    pa_dcs_InterfaceDataBackup_t* interfaceDataBackupPtr
+)
+{
+
+    ip_addr_t         dnsIpAddr;
+    const ip_addr_t*  currDnsPtr;
+    int               i, j;
+    char*             dnsNamePtr;
+    char*       dnsPtrArray[4] = {
+                                   interfaceDataBackupPtr->newDnsIPv4[0],
+                                   interfaceDataBackupPtr->newDnsIPv4[1],
+                                   interfaceDataBackupPtr->newDnsIPv6[0],
+                                   interfaceDataBackupPtr->newDnsIPv6[0]
+                                  };
+
+    for (i = 0; i < sizeof(dnsPtrArray)/sizeof(char*); i++)
+    {
+        dnsNamePtr = dnsPtrArray[i];
+
+        if (strlen(dnsNamePtr))
+        {
+            if (AddressStrToAddressStruct(dnsNamePtr, &dnsIpAddr) != LE_OK)
+            {
+                // Just log an error
+                LE_ERROR("Failed to convert dns %s to struct", dnsNamePtr);
+            } else {
+                LE_INFO("Converted dns %s to struct", dnsNamePtr);
+
+                /**
+                 * Only dns Name servers at offset 0 and 1
+                 * are used
+                 */
+                for (j = 0; j < 2; j++)
+                {
+                    currDnsPtr = dns_getserver(j);
+                    /**
+                     * ip_addr_cmp() returns 1 when identical!!!
+                     */
+                    if (ip_addr_cmp(&dnsIpAddr, currDnsPtr))
+                    {
+                        dns_setserver(j, IP_ADDR_ANY);
+                        LE_INFO("Removed dns name server %s", dnsNamePtr);
+                        dnsNamePtr[0] = '\0';
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    LE_INFO("Finished");
+}
+
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Component initialization
+ */
+//--------------------------------------------------------------------------------------------------
+COMPONENT_INIT
+{
+}
