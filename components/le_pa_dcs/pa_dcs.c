@@ -1,8 +1,7 @@
 //--------------------------------------------------------------------------------------------------
 /**
  * LWIP Data Connection Service Adapter
- * Provides adapter for linux specific functionality needed by
- * dataConnectionService component
+ * Provides adapter for linux specific functionality needed by dataConnectionService component
  *
  */
 //--------------------------------------------------------------------------------------------------
@@ -605,6 +604,45 @@ void pa_dcs_RestoreInitialDnsNameServers
     LE_INFO("Finished");
 }
 
+//--------------------------------------------------------------------------------------------------
+/**
+ * Retrieve time from a server using the Time Protocol.
+ *
+ * @return
+ *      - LE_OK             Function successful
+ *      - LE_BAD_PARAMETER  A parameter is incorrect
+ *      - LE_FAULT          Function failed
+ *      - LE_UNSUPPORTED    Function not supported by the target
+ */
+//--------------------------------------------------------------------------------------------------
+le_result_t pa_dcs_GetTimeWithTimeProtocol
+(
+    const char* serverStrPtr,       ///< [IN]  Time server
+    pa_dcs_TimeStruct_t* timePtr    ///< [OUT] Time structure
+)
+{
+    return LE_UNSUPPORTED;
+}
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Retrieve time from a server using the Network Time Protocol.
+ *
+ * @return
+ *      - LE_OK             Function successful
+ *      - LE_BAD_PARAMETER  A parameter is incorrect
+ *      - LE_FAULT          Function failed
+ *      - LE_UNSUPPORTED    Function not supported by the target
+ */
+//--------------------------------------------------------------------------------------------------
+le_result_t pa_dcs_GetTimeWithNetworkTimeProtocol
+(
+    const char* serverStrPtr,       ///< [IN]  Time server
+    pa_dcs_TimeStruct_t* timePtr    ///< [OUT] Time structure
+)
+{
+    return LE_UNSUPPORTED;
+}
 
 //--------------------------------------------------------------------------------------------------
 /**
