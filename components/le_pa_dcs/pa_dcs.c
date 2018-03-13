@@ -305,24 +305,27 @@ le_result_t pa_dcs_SetDnsNameServers
     const char*       dnsNameServerArray[2] = {dns1Ptr, dns2Ptr};
     ip_addr_t         retAddrStruct;
     le_result_t       stat;
-    int               i;
-    int               arrayLen;
+    int               i, arrayLen;
 
     arrayLen = sizeof(dnsNameServerArray)/sizeof(const char*);
 
     for (i = 0; i < arrayLen; i++)
     {
-        stat = AddressStrToAddressStruct(dnsNameServerArray[i], &retAddrStruct);
-
-        if (stat != LE_OK)
+        if('\0' != dnsNameServerArray[i][0])
         {
-            LE_ERROR("Failed to convert address info for DNS Name Server: %s, state=%d",
-                     dnsNameServerArray[i],
-                     stat);
-            return LE_FAULT;
+            stat = AddressStrToAddressStruct(dnsNameServerArray[i], &retAddrStruct);
+            if (stat != LE_OK)
+            {
+                LE_WARN("Failed to convert address %d info for DNS Name Server: %s, state=%d", i,
+                    dnsNameServerArray[i],
+                    stat);
+                return LE_FAULT;
+            }
+            else
+            {
+                dns_setserver(i, &retAddrStruct);
+            }
         }
-
-        dns_setserver(i, &retAddrStruct);
     }
 
     return LE_OK;
@@ -381,7 +384,6 @@ le_result_t pa_dcs_ChangeRoute
             retStat = LE_FAULT;
         } else {
             stat = AddressStrToAddressStruct(ipDestAddrStrPtr, &destination);
-
             if (stat != LE_OK)
             {
                 LE_ERROR("Failed to convert destination address: %s, stat=%d",
