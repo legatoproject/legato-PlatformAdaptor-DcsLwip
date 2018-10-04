@@ -220,7 +220,8 @@ static le_result_t AddressStrToAddressStruct
      */
     stat = netconn_gethostbyname_addrtype(charAddress,
                                        retAddrInfoPtr,
-                                       NETCONN_DNS_IPV4_IPV6);
+                                       NETCONN_DNS_IPV4_IPV6,
+                                       NULL);
     if (stat != ERR_OK)
     {
         LE_ERROR("Failed for charAddress=%s, stat=%d",
