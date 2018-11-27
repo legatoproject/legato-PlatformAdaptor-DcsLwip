@@ -25,6 +25,11 @@
  */
 #define IPV4_DEFAULT_MASK_STRING         "255.255.255.255"
 
+/** Standard port for TIME protocol (RFC 868). */
+#define TIME_PORT           37U
+
+/** Unix Epoch in seconds since 00:00 Jan 1, 1900. */
+#define TIME_OF_UNIX_EPOCH  2208988800UL
 
 //--------------------------------------------------------------------------------------------------
 /**
@@ -624,7 +629,77 @@ le_result_t pa_dcs_GetTimeWithTimeProtocol
     pa_dcs_TimeStruct_t* timePtr    ///< [OUT] Time structure
 )
 {
-    return LE_UNSUPPORTED;
+    ip_addr_t            addr;
+    le_result_t          result = LE_FAULT;
+    struct netbuf       *bufPtr = NULL;
+    struct netconn      *connPtr;
+    struct tm            tm;
+    uint16_t             length;
+    uint32_t             time;
+    void                *dataPtr;
+
+    if (serverStrPtr == NULL || timePtr == NULL || serverStrPtr[0] == '\0')
+    {
+        LE_ERROR("Invalid time structure or server name");
+        return LE_BAD_PARAMETER;
+    }
+
+    // Resolve server name
+    if (netconn_gethostbyname(serverStrPtr, &addr) != ERR_OK)
+    {
+        LE_ERROR("Failed to resolve TIME server '%s'", serverStrPtr);
+        return LE_FAULT;
+    }
+
+    // Open TCP connection
+    connPtr = netconn_new(NETCONN_TCP);
+    if (connPtr == NULL || netconn_connect(connPtr, &addr, TIME_PORT) != ERR_OK)
+    {
+        LE_ERROR("TIME server connection failed");
+        goto end;
+    }
+
+    // Read 32-bit time value
+    if (netconn_recv(connPtr, &bufPtr) != ERR_OK          ||
+        netbuf_data(bufPtr, &dataPtr, &length) != ERR_OK  ||
+        length != sizeof(time))
+    {
+        LE_ERROR("TIME server response invalid");
+        goto end;
+    }
+    memcpy(&time, dataPtr, sizeof(time));
+    time = ntohl(time);
+
+    // Format time (received value is seconds since 00:00 Jan 1, 1900)
+    time -= TIME_OF_UNIX_EPOCH;
+    if (gmtime_r((time_t *) &time, &tm) == NULL)
+    {
+        LE_ERROR("Failed to obtain UTC time");
+        goto end;
+    }
+
+    timePtr->msec = 0L;
+    timePtr->sec = tm.tm_sec;
+    timePtr->min = tm.tm_min;
+    timePtr->hour = tm.tm_hour;
+    timePtr->day = tm.tm_mday;
+    timePtr->mon = tm.tm_mon + 1;       // tm_mon range is 0-11, mon range is 1-12
+    timePtr->year = tm.tm_year + 1900;  // tm_year is measured from 1900
+
+    result = LE_OK;
+
+end:
+    // Clean up
+    if (bufPtr != NULL)
+    {
+        netbuf_free(bufPtr);
+    }
+    if (connPtr != NULL)
+    {
+        netconn_close(connPtr);
+        netconn_delete(connPtr);
+    }
+    return result;
 }
 
 //--------------------------------------------------------------------------------------------------
@@ -644,7 +719,34 @@ le_result_t pa_dcs_GetTimeWithNetworkTimeProtocol
     pa_dcs_TimeStruct_t* timePtr    ///< [OUT] Time structure
 )
 {
-    return LE_UNSUPPORTED;
+    struct timeval  tv;
+    struct tm       tm;
+
+    // The SNTP client's servers are configured separately - there is no one-off request mechanism,
+    // so here we just return the system time, which should be set from either the cellular network
+    // or SNTP.
+    (void) serverStrPtr;
+    if (timePtr == NULL)
+    {
+        LE_ERROR("Invalid time structure");
+        return LE_BAD_PARAMETER;
+    }
+
+    if (gettimeofday(&tv, NULL) != 0 || gmtime_r(&tv.tv_sec, &tm) == NULL)
+    {
+        LE_ERROR("Failed to obtain UTC time");
+        return LE_FAULT;
+    }
+
+    timePtr->msec = tv.tv_usec / 1000L;
+    timePtr->sec = tm.tm_sec;
+    timePtr->min = tm.tm_min;
+    timePtr->hour = tm.tm_hour;
+    timePtr->day = tm.tm_mday;
+    timePtr->mon = tm.tm_mon + 1;       // tm_mon range is 0-11, mon range is 1-12
+    timePtr->year = tm.tm_year + 1900;  // tm_year is measured from 1900
+
+    return LE_OK;
 }
 
 //--------------------------------------------------------------------------------------------------
