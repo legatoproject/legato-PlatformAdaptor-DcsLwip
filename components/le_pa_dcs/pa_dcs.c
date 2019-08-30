@@ -504,7 +504,7 @@ le_result_t pa_dcs_SetDefaultGateway
 //--------------------------------------------------------------------------------------------------
 void pa_dcs_SaveDefaultGateway
 (
-    pa_dcs_InterfaceDataBackup_t* interfaceDataBackupPtr
+    pa_dcs_DefaultGwBackup_t* defGwConfigBackupPtr
 )
 {
     char gwAddrStrBuffer[40];
@@ -516,32 +516,32 @@ void pa_dcs_SaveDefaultGateway
     if (netif_default != NULL)
     {
         if (sizeof(netif_default->name) >=
-               sizeof(interfaceDataBackupPtr->defaultInterface))
+               sizeof(defGwConfigBackupPtr->defaultV4Interface))
         {
             LE_ERROR("Insufficient size of default interface buffer: %" PRIu32 " ",
-                     sizeof(interfaceDataBackupPtr->defaultInterface));
+                     sizeof(defGwConfigBackupPtr->defaultV4Interface));
             return;
         }
-        memset(interfaceDataBackupPtr->defaultInterface,
+        memset(defGwConfigBackupPtr->defaultV4Interface,
                0x00,
-               sizeof(interfaceDataBackupPtr->defaultInterface));
+               sizeof(defGwConfigBackupPtr->defaultV4Interface));
 
-        memset(interfaceDataBackupPtr->defaultGateway,
+        memset(defGwConfigBackupPtr->defaultV4GW,
                0x00,
-               sizeof(interfaceDataBackupPtr->defaultGateway));
+               sizeof(defGwConfigBackupPtr->defaultV4GW));
 
         if (AddressStructToAddressStr(&(netif_default->gw),
                                       gwAddrStrBuffer,
                                       sizeof(gwAddrStrBuffer)) == LE_OK)
         {
-            snprintf(interfaceDataBackupPtr->defaultGateway,
-                     sizeof(interfaceDataBackupPtr->defaultGateway),
+            snprintf(defGwConfigBackupPtr->defaultV4GW,
+                     sizeof(defGwConfigBackupPtr->defaultV4GW),
                      "%s",
                      gwAddrStrBuffer);
             /**
              * Interface name in struct netif is not nul terminated
              */
-            memcpy(interfaceDataBackupPtr->defaultInterface,
+            memcpy(defGwConfigBackupPtr->defaultV4Interface,
                    netif_default->name,
                    sizeof(netif_default->name));
         } else {
@@ -559,7 +559,7 @@ void pa_dcs_SaveDefaultGateway
 //--------------------------------------------------------------------------------------------------
 void pa_dcs_RestoreInitialDnsNameServers
 (
-    pa_dcs_InterfaceDataBackup_t* interfaceDataBackupPtr
+    pa_dcs_DnsBackup_t* dnsConfigBackupPtr
 )
 {
 
@@ -568,10 +568,10 @@ void pa_dcs_RestoreInitialDnsNameServers
     int               i, j;
     char*             dnsNamePtr;
     char*       dnsPtrArray[4] = {
-                                   interfaceDataBackupPtr->newDnsIPv4[0],
-                                   interfaceDataBackupPtr->newDnsIPv4[1],
-                                   interfaceDataBackupPtr->newDnsIPv6[0],
-                                   interfaceDataBackupPtr->newDnsIPv6[0]
+                                   dnsConfigBackupPtr->newDnsIPv4[0],
+                                   dnsConfigBackupPtr->newDnsIPv4[1],
+                                   dnsConfigBackupPtr->newDnsIPv6[0],
+                                   dnsConfigBackupPtr->newDnsIPv6[0]
                                   };
 
     for (i = 0; i < sizeof(dnsPtrArray)/sizeof(char*); i++)
