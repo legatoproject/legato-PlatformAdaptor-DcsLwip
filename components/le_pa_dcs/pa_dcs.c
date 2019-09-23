@@ -371,6 +371,7 @@ le_result_t pa_dcs_ChangeRoute
 (
     pa_dcs_RouteAction_t   routeAction,
     const char*            ipDestAddrStrPtr,
+    const char*            prefixLengthPtr,
     const char*            interfaceStrPtr
 )
 {
@@ -747,6 +748,68 @@ le_result_t pa_dcs_GetTimeWithNetworkTimeProtocol
     timePtr->year = tm.tm_year + 1900;  // tm_year is measured from 1900
 
     return LE_OK;
+}
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Query for a connection's network interface state
+ *
+ * @return
+ *      - LE_OK             Function successful
+ *      - LE_BAD_PARAMETER  A parameter is incorrect
+ *      - LE_FAULT          Function failed
+ *      - LE_UNSUPPORTED    Function not supported by the target
+ */
+//--------------------------------------------------------------------------------------------------
+le_result_t pa_dcs_GetInterfaceState
+(
+    const char *interfacePtr,  ///< [IN] network interface name
+    bool *ipv4IsUpPtr,         ///< [INOUT] IPV4 is not assigned/assigned as false/true
+    bool *ipv6IsUpPtr          ///< [INOUT] IPV6 is not assigned/assigned as false/true
+)
+{
+    LE_UNUSED(interfacePtr);
+    LE_UNUSED(ipv4IsUpPtr);
+    LE_UNUSED(ipv6IsUpPtr);
+    return LE_UNSUPPORTED;
+}
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Returns DHCP lease file location
+ *
+ * @return
+ *      LE_OVERFLOW     Destination buffer too small and output will be truncated
+ *      LE_UNSUPPORTED  If not supported by OS
+ *      LE_FAULT        Function failed
+ *      LE_OK           Function succeed
+ */
+//--------------------------------------------------------------------------------------------------
+LE_SHARED le_result_t pa_dcs_GetDhcpLeaseFilePath
+(
+    const char*  interfaceStrPtr,   ///< [IN] Pointer on the interface name
+    char*        pathPtr,           ///< [OUT] Output 1 pointer
+    size_t       bufferSize         ///< [IN]  Size of buffer
+)
+{
+    LE_UNUSED(interfaceStrPtr);
+    LE_UNUSED(pathPtr);
+    LE_UNUSED(bufferSize);
+    return LE_UNSUPPORTED;
+}
+
+//--------------------------------------------------------------------------------------------------
+/**
+ * Get the default route
+ */
+//--------------------------------------------------------------------------------------------------
+LE_SHARED le_result_t pa_dcs_GetDefaultGateway
+(
+    pa_dcs_InterfaceDataBackup_t*  interfaceDataBackupPtr
+)
+{
+    LE_UNUSED(interfaceDataBackupPtr);
+    return LE_UNSUPPORTED;
 }
 
 //--------------------------------------------------------------------------------------------------
