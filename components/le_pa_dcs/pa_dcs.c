@@ -295,7 +295,9 @@ static le_result_t  AddressStructToAddressStr
 
 //--------------------------------------------------------------------------------------------------
 /**
- * Set the DNS configuration
+ * Add the provided DNS configurations into /etc/resolv.conf. An empty string in any of the 2
+ * input arguments means that it has no DNS address to add in that field. And this function's
+ * caller should have blocked the case in having both inputs empty.
  *
  * @return
  *      LE_FAULT        Function failed
@@ -304,8 +306,10 @@ static le_result_t  AddressStructToAddressStr
 //--------------------------------------------------------------------------------------------------
 le_result_t pa_dcs_SetDnsNameServers
 (
-    const char* dns1Ptr,    ///< [IN] Pointer on first DNS address
-    const char* dns2Ptr     ///< [IN] Pointer on second DNS address
+    const char* dns1Ptr,    ///< [IN] Pointer to 1st DNS address; empty string means nothing to add
+    const char* dns2Ptr,    ///< [IN] Pointer to 2nd DNS address; empty string means nothing to add
+    bool* isDns1Added,      ///< [OUT] Whether the 1st DNS address is added or not
+    bool* isDns2Added       ///< [OUT] Whether the 2nd DNS address is added or not
 )
 {
     const char*       dnsNameServerArray[2] = {dns1Ptr, dns2Ptr};
@@ -325,11 +329,15 @@ le_result_t pa_dcs_SetDnsNameServers
                 LE_WARN("Failed to convert address %d info for DNS Name Server: %s, state=%d", i,
                     dnsNameServerArray[i],
                     stat);
+                *isDns1Added = false;
+                *isDns2Added = false;
                 return LE_FAULT;
             }
             else
             {
                 dns_setserver(i, &retAddrStruct);
+                *isDns1Added = ('\0' != dns1Ptr[0]);
+                *isDns2Added = ('\0' != dns2Ptr[0]);
             }
         }
     }
