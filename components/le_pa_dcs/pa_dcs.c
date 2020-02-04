@@ -577,10 +577,10 @@ void pa_dcs_RestoreInitialDnsNameServers
     int               i, j;
     char*             dnsNamePtr;
     char*       dnsPtrArray[4] = {
-                                   dnsConfigBackupPtr->newDnsIPv4[0],
-                                   dnsConfigBackupPtr->newDnsIPv4[1],
-                                   dnsConfigBackupPtr->newDnsIPv6[0],
-                                   dnsConfigBackupPtr->newDnsIPv6[0]
+                                   dnsConfigBackupPtr->dnsIPv4[0],
+                                   dnsConfigBackupPtr->dnsIPv4[1],
+                                   dnsConfigBackupPtr->dnsIPv6[0],
+                                   dnsConfigBackupPtr->dnsIPv6[1]
                                   };
 
     for (i = 0; i < sizeof(dnsPtrArray)/sizeof(char*); i++)
@@ -811,15 +811,17 @@ LE_SHARED le_result_t pa_dcs_GetDhcpLeaseFilePath
  * Get the default route
  */
 //--------------------------------------------------------------------------------------------------
-LE_SHARED le_result_t pa_dcs_GetDefaultGateway
+LE_SHARED void pa_dcs_GetDefaultGateway
 (
-    pa_dcs_InterfaceDataBackup_t*  interfaceDataBackupPtr
+    pa_dcs_DefaultGwBackup_t*  defGwConfigBackupPtr,
+    le_result_t* v4Result,
+    le_result_t* v6Result
 )
 {
-    LE_UNUSED(interfaceDataBackupPtr);
-    return LE_UNSUPPORTED;
+    LE_UNUSED(defGwConfigBackupPtr);
+    *v4Result = LE_UNSUPPORTED;
+    *v6Result = LE_UNSUPPORTED;
 }
-
 //--------------------------------------------------------------------------------------------------
 /**
  * Component initialization
